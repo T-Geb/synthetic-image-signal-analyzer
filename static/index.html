@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Synthetic Media Signal Analyzer</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        background: #f7f8fa;
+        color: #17202a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+      }
+
+      main {
+        width: min(980px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 48px 0;
+      }
+
+      header {
+        margin-bottom: 28px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: clamp(2rem, 5vw, 4.25rem);
+        line-height: 1.02;
+        letter-spacing: 0;
+      }
+
+      p {
+        margin: 0;
+        color: #536170;
+        font-size: 1rem;
+        line-height: 1.6;
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
+        gap: 20px;
+        align-items: start;
+      }
+
+      .panel {
+        border: 1px solid #d9dee5;
+        border-radius: 8px;
+        background: #ffffff;
+        padding: 20px;
+        box-shadow: 0 10px 30px rgba(21, 31, 43, 0.06);
+      }
+
+      label {
+        display: block;
+        margin-bottom: 10px;
+        font-weight: 700;
+      }
+
+      input[type="file"] {
+        width: 100%;
+        padding: 12px;
+        border: 1px dashed #98a5b3;
+        border-radius: 8px;
+        background: #fbfcfd;
+      }
+
+      button {
+        width: 100%;
+        min-height: 44px;
+        margin-top: 16px;
+        border: 0;
+        border-radius: 8px;
+        background: #126b5d;
+        color: #ffffff;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        cursor: wait;
+        opacity: 0.68;
+      }
+
+      .preview {
+        display: none;
+        width: 100%;
+        margin-top: 16px;
+        border-radius: 8px;
+        border: 1px solid #e2e6eb;
+      }
+
+      .status {
+        margin-top: 14px;
+        min-height: 24px;
+        color: #7c4a03;
+      }
+
+      .report {
+        display: grid;
+        gap: 14px;
+      }
+
+      .metric-row {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .metric {
+        min-height: 92px;
+        border: 1px solid #e1e6ec;
+        border-radius: 8px;
+        padding: 14px;
+        background: #fbfcfd;
+      }
+
+      .metric span,
+      .section-title {
+        display: block;
+        margin-bottom: 8px;
+        color: #667381;
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .metric strong {
+        font-size: 1.5rem;
+        line-height: 1.1;
+      }
+
+      ul {
+        margin: 0;
+        padding-left: 20px;
+      }
+
+      li {
+        margin: 7px 0;
+        line-height: 1.45;
+      }
+
+      code {
+        padding: 2px 6px;
+        border-radius: 6px;
+        background: #edf2f6;
+      }
+
+      a {
+        color: #126b5d;
+        font-weight: 700;
+      }
+
+      .model-note {
+        margin-top: 6px;
+        font-size: 0.88rem;
+      }
+
+      .model-attribution {
+        border-top: 1px solid #e1e6ec;
+        margin-top: 10px;
+        padding-top: 14px;
+        color: #536170;
+        font-size: 0.82rem;
+        line-height: 1.5;
+      }
+
+      @media (max-width: 780px) {
+        main {
+          padding-top: 28px;
+        }
+
+        .workspace,
+        .metric-row {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Synthetic Media Signal Analyzer</h1>
+        <p>Upload a JPG or PNG image to receive an AI-likelihood report.</p>
+      </header>
+
+      <section class="workspace">
+        <form class="panel" id="upload-form">
+          <label for="image-file">Image upload</label>
+          <input id="image-file" name="file" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" required />
+          <button id="submit-button" type="submit">Analyze image</button>
+          <img class="preview" id="preview" alt="Selected upload preview" />
+          <p class="status" id="status" role="status"></p>
+        </form>
+
+        <section class="panel report" id="report" aria-live="polite">
+          <p>Analysis results will appear here.</p>
+        </section>
+      </section>
+    </main>
+
+    <script>
+      const form = document.querySelector("#upload-form");
+      const fileInput = document.querySelector("#image-file");
+      const preview = document.querySelector("#preview");
+      const report = document.querySelector("#report");
+      const statusText = document.querySelector("#status");
+      const submitButton = document.querySelector("#submit-button");
+      let previewUrl = "";
+      let activeRequestId = 0;
+
+      fileInput.addEventListener("change", () => {
+        const file = fileInput.files[0];
+        resetReport();
+        statusText.textContent = "";
+
+        if (previewUrl) {
+          URL.revokeObjectURL(previewUrl);
+          previewUrl = "";
+        }
+
+        if (!file) {
+          preview.style.display = "none";
+          preview.removeAttribute("src");
+          return;
+        }
+
+        previewUrl = URL.createObjectURL(file);
+        preview.src = previewUrl;
+        preview.style.display = "block";
+      });
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const file = fileInput.files[0];
+        if (!file) return;
+
+        const requestId = activeRequestId + 1;
+        activeRequestId = requestId;
+        const payload = new FormData();
+        payload.append("file", file);
+        submitButton.disabled = true;
+        statusText.textContent = "Analyzing image...";
+        report.innerHTML = "<p>Analyzing selected image...</p>";
+
+        try {
+          const response = await fetch("/analyze-image", {
+            method: "POST",
+            body: payload,
+            cache: "no-store",
+          });
+
+          const data = await response.json();
+          if (requestId !== activeRequestId) return;
+
+          if (!response.ok) {
+            throw new Error(data.detail || "Analysis request failed.");
+          }
+
+          renderReport(data);
+          statusText.textContent = "Analysis complete.";
+        } catch (error) {
+          if (requestId !== activeRequestId) return;
+
+          report.innerHTML = "<p>Analysis could not be completed.</p>";
+          statusText.textContent = error.message;
+        } finally {
+          if (requestId === activeRequestId) {
+            submitButton.disabled = false;
+          }
+        }
+      });
+
+      function resetReport() {
+        activeRequestId += 1;
+        submitButton.disabled = false;
+        report.innerHTML = "<p>Analysis results will appear here.</p>";
+      }
+
+      function renderReport(data) {
+        const interpretation = interpretationFor(data);
+        const breakdown = likelihoodBreakdown(data);
+        const thresholdPercent = Math.round(Number(data.strong_confidence_threshold) * 100);
+        const limitations = data.limitations
+          .map((item) => `<li>${escapeHtml(item)}</li>`)
+          .join("");
+
+        report.innerHTML = `
+          <div class="metric-row">
+            <div class="metric">
+              <span>Media type</span>
+              <strong>${escapeHtml(data.media_type)}</strong>
+            </div>
+            <div class="metric">
+              <span>Reported likelihood</span>
+              <strong>${escapeHtml(data.synthetic_likelihood)}</strong>
+            </div>
+            <div class="metric">
+              <span>Confidence</span>
+              <strong>${data.confidence}</strong>
+            </div>
+          </div>
+          <div>
+            <span class="section-title">AI signal score</span>
+            <p>${data.model_score}</p>
+            <p class="model-note">Strong labels are shown only when the top score is at least ${thresholdPercent}%.</p>
+          </div>
+          <div>
+            <span class="section-title">Interpretation</span>
+            <p>${escapeHtml(interpretation)}</p>
+          </div>
+          <div>
+            <span class="section-title">Likelihood scores</span>
+            <ul>
+              <li>Human likelihood: ${breakdown.human}%</li>
+              <li>AI likelihood: ${breakdown.ai}%</li>
+            </ul>
+          </div>
+          <div>
+            <span class="section-title">Limitations</span>
+            <ul>${limitations}</ul>
+          </div>
+          <p class="model-attribution">
+            Model:
+            <a href="${escapeHtml(data.model_url)}" rel="noreferrer" target="_blank">${escapeHtml(data.model_name)}</a>
+            · License:
+            <a href="${escapeHtml(data.model_license_url)}" rel="noreferrer" target="_blank">${escapeHtml(data.model_license)}</a>
+            · Use: non-commercial/personal/educational
+          </p>
+        `;
+      }
+
+      function interpretationFor(data) {
+        const normalized = String(data.synthetic_likelihood).toLowerCase();
+        const direction = String(data.prediction_direction);
+        const confidenceBand = String(data.confidence_band);
+
+        if (normalized === "medium" && confidenceBand === "not_strong") {
+          if (direction === "leans_synthetic") {
+            return "The analysis leans toward AI-generated, but confidence is below the strong-confidence threshold.";
+          }
+
+          if (direction === "leans_human") {
+            return "The analysis leans toward human/camera-origin, but confidence is below the strong-confidence threshold.";
+          }
+
+          return "The analysis did not produce a strong directional signal for this image.";
+        }
+
+        if (normalized === "high") {
+          return "This image shows a high AI-generated likelihood based on the analysis.";
+        }
+
+        if (normalized === "medium") {
+          return "This image shows mixed signals, so the AI-generated likelihood is moderate.";
+        }
+
+        return "This image does not appear to be AI-generated based on the analysis.";
+      }
+
+      function likelihoodBreakdown(data) {
+        const aiScore = Number(data.model_score);
+        const humanSignal = data.signals.find((signal) => {
+          const value = String(signal.value).toLowerCase();
+          return ["human", "camera", "photo", "natural"].some((hint) => value.includes(hint));
+        });
+        const humanScore = humanSignal ? Number(humanSignal.score) : 1 - aiScore;
+
+        return {
+          human: Math.round(humanScore * 100),
+          ai: Math.round(aiScore * 100),
+        };
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, (char) => {
+          const entities = {
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#039;",
+          };
+          return entities[char];
+        });
+      }
+    </script>
+  </body>
+</html>

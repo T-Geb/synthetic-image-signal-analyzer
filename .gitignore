@@ -1,0 +1,8 @@
+.venv/
+.venv313_backup/
+dev_notes.md
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
